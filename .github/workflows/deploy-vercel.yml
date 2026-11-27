@@ -42,9 +42,15 @@ jobs:
           parser.feed(Path('index.html').read_text())
           assert parser.links <= parser.ids, f'Missing targets: {parser.links - parser.ids}'
           assert {'home', 'about', 'businesses', 'partners', 'contact'} <= parser.ids
-          print('Website navigation validated')
+          import re
+          for name in ('index.html', 'styles.css'):
+              content = Path(name).read_text()
+              for asset in re.findall(r'assets/[a-zA-Z0-9_.-]+', content):
+                  assert Path(asset).is_file(), f'Missing asset: {asset}'
+          print('Website navigation and assets validated')
           PY
       - name: Deploy static source to Vercel
+        if: github.event_name == 'workflow_dispatch'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
@@ -55,7 +61,7 @@ jobs:
           : "${VERCEL_ORG_ID:?Configure VERCEL_ORG_ID in repository variables}"
           : "${VERCEL_PROJECT_ID:?Configure VERCEL_PROJECT_ID in repository variables}"
           python3 - <<'PY'
-          import json, os, time, urllib.request, urllib.parse, urllib.error
+          import base64, json, os, time, urllib.request, urllib.parse, urllib.error
           from pathlib import Path
           base = 'https://api.vercel.com'
           query = urllib.parse.urlencode({'teamId': os.environ['VERCEL_ORG_ID']})
@@ -72,7 +78,7 @@ jobs:
               'name': 'roots-three-site',
               'project': os.environ['VERCEL_PROJECT_ID'],
               'target': 'production',
-              'files': [{'file': 'index.html', 'data': Path('index.html').read_text(), 'encoding': 'utf-8'}],
+              'files': [{'file': str(p), 'data': base64.b64encode(p.read_bytes()).decode(), 'encoding': 'base64'} for p in [Path('index.html'), Path('styles.css'), Path('site.js'), *sorted(Path('assets').glob('*'))] if p.is_file()],
               'projectSettings': {'framework': None, 'buildCommand': None, 'outputDirectory': None},
               'meta': {'githubCommitSha': os.environ['GITHUB_SHA']}
           })
